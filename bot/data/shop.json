@@ -1,0 +1,30 @@
+[
+    {
+        "id": "bat_basic",
+        "name": "Rookie Willow Bat",
+        "description": "A basic cricket bat. Might help you hit a four.",
+        "price": 500,
+        "emoji": "🏏"
+    },
+    {
+        "id": "bat_pro",
+        "name": "Pro English Willow",
+        "description": "Professional grade bat. Highly balanced.",
+        "price": 2500,
+        "emoji": "🏏"
+    },
+    {
+        "id": "shoes_grip",
+        "name": "Spiked Cricket Shoes",
+        "description": "Never slip on the pitch again.",
+        "price": 1000,
+        "emoji": "👟"
+    },
+    {
+        "id": "mystery_pack",
+        "name": "Mystery Pack",
+        "description": "A mysterious pack that could contain anything.",
+        "price": 5000,
+        "emoji": "🎁"
+    }
+]

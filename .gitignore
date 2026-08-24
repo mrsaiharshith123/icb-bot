@@ -1,0 +1,111 @@
+# ==============================================================================
+# Python
+# ==============================================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ==============================================================================
+# Testing & Coverage
+# ==============================================================================
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.sveditor
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ==============================================================================
+# Virtual Environments
+# ==============================================================================
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ==============================================================================
+# IDEs and Editors
+# ==============================================================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+
+# Antigravity
+.gemini/
+.antigravity/
+
+# ==============================================================================
+# OS Generated Files
+# ==============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+ehthumbs_vista.db
+[Tt]humbs.db
+[Dd]esktop.ini
+
+# ==============================================================================
+# Project Specific (Discord.py, MongoDB, Pillow)
+# ==============================================================================
+# Secrets and Configurations (Tokens, Connection Strings, API Keys)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+secrets.json
+
+# Logs
+logs/
+*.log
+
+# Generated files / Temp data (e.g. from Pillow processing)
+tmp/
+temp/
+generated/
+media/temp/
+
+# Database files (if using local SQLite for testing instead of MongoDB)
+*.sqlite3
+*.db
