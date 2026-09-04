@@ -76,11 +76,16 @@ async def add_catch_to_match(match_id: str, catcher_id: str, batter_id: str, mes
     )
     return result.modified_count > 0
 
-async def set_pending_catch(match_id: str, catcher_id: str, batter_id: str):
-    """Stores a potential catch waiting for resolution."""
+async def set_pending_catch(match_id: str, catcher_id: str, batter_id: str, message_id: int):
+    """Stores a potential catch waiting for resolution with a timestamp."""
     await matches_col.update_one(
         {"_id": match_id},
-        {"$set": {"pending_catch": {"catcher": catcher_id, "batter": batter_id}}}
+        {"$set": {"pending_catch": {
+            "catcher": catcher_id, 
+            "batter": batter_id,
+            "message_id": message_id,
+            "created_at": datetime.now(timezone.utc)
+        }}}
     )
 
 async def resolve_pending_catch(match_id: str, success: bool, message_id: int) -> dict:
@@ -90,6 +95,14 @@ async def resolve_pending_catch(match_id: str, success: bool, message_id: int) -
         pending = match["pending_catch"]
         catcher_id = pending["catcher"]
         batter_id = pending["batter"]
+        created_at = pending.get("created_at")
+        
+        is_expired = False
+        if created_at:
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            if (datetime.now(timezone.utc) - created_at).total_seconds() > 180: # 3 minutes timeout
+                is_expired = True
         
         # Clear pending
         await matches_col.update_one(
@@ -97,12 +110,15 @@ async def resolve_pending_catch(match_id: str, success: bool, message_id: int) -
             {"$set": {"pending_catch": None}}
         )
         
+        if is_expired:
+            return {"expired": True, "catcher_id": catcher_id, "batter_id": batter_id}
+        
         # Add to catches list (success or dropped)
         added = await add_catch_to_match(match_id, catcher_id, batter_id, message_id, dropped=not success)
         
         # If it was successfully added to array, return the details
         if added:
-            return {"catcher_id": catcher_id, "batter_id": batter_id}
+            return {"catcher_id": catcher_id, "batter_id": batter_id, "expired": False}
             
     return None
 

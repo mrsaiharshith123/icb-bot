@@ -55,62 +55,57 @@ def parse_hattrick(message: discord.Message):
         print(f"Failed to parse hattrick: {e}")
     return None
 
+def extract_hc_event_text(message: discord.Message) -> str:
+    """Robust helper to extract all text from a message and its embeds for event matching."""
+    parts = [message.content]
+    for embed in message.embeds:
+        if embed.title:
+            parts.append(embed.title)
+        if embed.description:
+            parts.append(embed.description)
+        if embed.author and embed.author.name:
+            parts.append(embed.author.name)
+        if embed.footer and embed.footer.text:
+            parts.append(embed.footer.text)
+        for field in embed.fields:
+            if field.name:
+                parts.append(field.name)
+            if field.value:
+                parts.append(field.value)
+    
+    # Normalize whitespace/case
+    text = " ".join(filter(None, parts))
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text.upper()
+
 def is_catch_event(message: discord.Message) -> bool:
     """
-    Checks if a message contains a catch event.
-    Checks both embeds and plain text (for testing).
+    Checks if a message contains a catch opportunity event.
     """
-    content = message.content.upper()
+    content = extract_hc_event_text(message)
     if "CHANCE OF WICKET" in content:
+        # Debug logging as requested
+        import logging
+        logging.debug(f"[CATCH_EVENT] Matched CHANCE OF WICKET: {message.id} | channel: {message.channel.id} | author: {message.author.id}")
         return True
-        
-    for embed in message.embeds:
-        # Check title or description
-        if embed.title and "CHANCE OF WICKET" in embed.title.upper():
-            return True
-        if embed.description and "CHANCE OF WICKET" in embed.description.upper():
-            return True
-        for field in embed.fields:
-            if field.name and "CHANCE OF WICKET" in field.name.upper():
-                return True
-            if field.value and "CHANCE OF WICKET" in field.value.upper():
-                return True
             
     return False
 
 def parse_catch(message: discord.Message):
     """
     Parses the catch event and returns a dict with 'catcher_id' and 'batter_id'.
-    Since discord user mentions are formatted as <@123456789>, we can extract IDs.
-    Returns None if parsing fails.
     """
     try:
-        # Extract text from content and embeds
-        text = message.content + "\n"
-        for embed in message.embeds:
-            if embed.description:
-                text += embed.description + "\n"
-            for field in embed.fields:
-                if field.name:
-                    text += field.name + "\n"
-                if field.value:
-                    text += field.value + "\n" 
-        # A catch opportunity is coming toward <@123456>!
-        # If <@123456> takes this catch, <@654321> will be out!
-        
+        text = extract_hc_event_text(message)
         # Find all mentions in order
         mentions = re.findall(r"<@!?(\d+)>", text)
         
         if len(mentions) >= 2:
-            # The catcher is mentioned first (and often twice). The batter is the last mention.
             catcher_id = mentions[0]
-            # To handle both "coming toward @X! If @X takes... @Y is out" (3 mentions)
-            # and just "@X caught @Y" (2 mentions), the batter is usually the last one.
             batter_id = mentions[-1]
             
             # Sanity check: catcher and batter shouldn't be the same if there are multiple unique mentions
             if catcher_id == batter_id and len(set(mentions)) > 1:
-                # If for some reason the last mention is same as first, find the different one
                 for m in mentions:
                     if m != catcher_id:
                         batter_id = m
@@ -121,39 +116,24 @@ def parse_catch(message: discord.Message):
                 "batter_id": batter_id
             }
     except Exception as e:
-        print(f"Failed to parse catch: {e}")
+        import logging
+        logging.error(f"Failed to parse catch: {e}")
         
     return None
 
 def is_catch_result(message: discord.Message) -> bool:
     """Checks if a message contains the result of a pending catch."""
-    content = message.content.upper()
+    content = extract_hc_event_text(message)
     if "DROPPED THE CATCH" in content or "TOOK THE CATCH" in content or "DROPPED IT" in content or "CAUGHT IT" in content:
+        import logging
+        logging.debug(f"[CATCH_RESULT] Matched result: {message.id} | channel: {message.channel.id} | author: {message.author.id}")
         return True
-        
-    for embed in message.embeds:
-        desc = (embed.description or "").upper()
-        if "DROPPED THE CATCH" in desc or "TOOK THE CATCH" in desc or "DROPPED IT" in desc or "CAUGHT IT" in desc:
-            return True
-        for field in embed.fields:
-            name = (field.name or "").upper()
-            val = (field.value or "").upper()
-            if "DROPPED THE CATCH" in name or "TOOK THE CATCH" in name or "DROPPED IT" in name or "CAUGHT IT" in name:
-                return True
-            if "DROPPED THE CATCH" in val or "TOOK THE CATCH" in val or "DROPPED IT" in val or "CAUGHT IT" in val:
-                return True
             
     return False
 
 def parse_catch_result(message: discord.Message) -> bool:
     """Returns True if the catch was taken, False if dropped."""
-    content = message.content.upper()
-    for embed in message.embeds:
-        content += " " + (embed.description or "").upper()
-        for field in embed.fields:
-            content += " " + (field.name or "").upper()
-            content += " " + (field.value or "").upper()
-        
+    content = extract_hc_event_text(message)
     if "TOOK THE CATCH" in content or "CAUGHT IT" in content:
         return True
     return False

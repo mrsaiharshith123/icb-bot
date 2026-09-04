@@ -16,36 +16,42 @@ def calculate_player_points(stats: dict) -> int:
     is_out = stats.get("out", False)
 
     # POSITIVE POINTS
-    points += runs * 1
-    points += wickets * 15
-    points += catches * 10
-    points += hattricks * 20
+    positive_points = 0
+    positive_points += runs * 1
+    positive_points += wickets * 15
+    positive_points += catches * 10
+    positive_points += hattricks * 20
     
     # 50s and 100s (Non-stacking per Season 3 rules: +10 for 50, +20 for 100)
     if runs >= 100:
-        points += 20
+        positive_points += 20
     elif runs >= 50:
-        points += 10
+        positive_points += 10
         
     # Wicket hauls (Non-stacking per Season 3 rules: +10 for 3fer, +15 for 5fer)
     if wickets >= 5:
-        points += 15
+        positive_points += 15
     elif wickets >= 3:
-        points += 10
+        positive_points += 10
         
     # NEGATIVE POINTS
+    negative_points = 0
     
-    # AFK, Leave, and Catch Drops are handled manually by admins
-    
+    # AFK, Leave, and Catch Drops are handled manually by admins (except drops are handled LIVE and passed via stats)
     # Duck (0 runs and Out)
     if runs == 0 and is_out and balls_faced > 0:
-        points -= 20
+        negative_points -= 20
         
     # Economy (Must have bowled at least one ball)
     if balls_bowled > 0:
         overs = balls_bowled / 6.0
         economy = runs_conceded / overs
         if economy >= 20.0:
-            points -= 10
+            negative_points -= 10
             
-    return points
+    # Apply Janmashtami multiplier
+    from bot.utils.events import is_janmashtami
+    if is_janmashtami():
+        positive_points *= 2
+            
+    return positive_points + negative_points

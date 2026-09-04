@@ -39,6 +39,45 @@ class AddStatsConfirmView(discord.ui.View):
             child.disabled = True
         await interaction.response.edit_message(content="❌ Finalization cancelled. You can run `!addstats` again when ready.", embed=None, view=self)
 
+class BackfillConfirmView(discord.ui.View):
+    def __init__(self, cog, ctx, pending_updates, db_collection):
+        super().__init__(timeout=300)
+        self.cog = cog
+        self.ctx = ctx
+        self.pending_updates = pending_updates
+        self.db_collection = db_collection
+        
+    @discord.ui.button(label="Confirm & Apply", style=discord.ButtonStyle.success)
+    async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        for child in self.children:
+            child.disabled = True
+        msg = await interaction.followup.edit_message(message_id=interaction.message.id, content="⏳ Applying...", view=self)
+        
+        from bot.database.players import update_player_stats
+        
+        for up in self.pending_updates:
+            await self.db_collection.update_one({"_id": up["msg_id"]}, {"$set": {"processed": True}}, upsert=True)
+            if up["type"] == "catch":
+                await update_player_stats(
+                    discord_id=up["catcher_id"],
+                    stats_update={"fielding.catches": 1, "points": up["pts"]}
+                )
+            elif up["type"] == "drop":
+                await update_player_stats(
+                    discord_id=up["catcher_id"],
+                    stats_update={"fielding.catch_drops": 1, "points": up["pts"]},
+                    push_updates={"penalties": {"amount": abs(up["pts"]), "reason": "Historical Drop Recovery", "date": datetime.now(timezone.utc).isoformat(), "given_by": "SYSTEM"}}
+                )
+        
+        await msg.edit(content=f"✅ Applied {len(self.pending_updates)} historical catch/drop stats!")
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(content="❌ Cancelled.", view=self)
+
 class Matches(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -59,17 +98,70 @@ class Matches(commands.Cog):
     async def on_message(self, message: discord.Message):
         # We don't print every message to avoid spam
 
-        
         # Ignore our own messages
         if message.author == self.bot.user:
             return
             
-        # Only listen to bots (like the HC bot), OR if it's a user pasting stats/uploading images
-        if not message.author.bot:
+        # ---------------------------------------------------------
+        # DEV-ONLY CATCH LISTENER TEST MODE
+        # Easy to disable: set DEV_TEST_MODE to False
+        # ---------------------------------------------------------
+        DEV_TEST_MODE = True
+        DEV_USER_ID = 898954315786502144
+        
+        if DEV_TEST_MODE and message.author.id == DEV_USER_ID:
+            if is_catch_event(message):
+                data = parse_catch(message)
+                if data:
+                    if not hasattr(self, "dev_pending_catches"):
+                        self.dev_pending_catches = {}
+                    self.dev_pending_catches[message.channel.id] = data
+                    
+                    await message.reply(
+                        f"🔧 **[CATCH TEST] Opportunity detected**\n"
+                        f"Fielder: <@{data['catcher_id']}>\n"
+                        f"Batter: <@{data['batter_id']}>"
+                    )
+                return
+                
+            if is_catch_result(message):
+                pending = getattr(self, "dev_pending_catches", {}).get(message.channel.id)
+                if pending:
+                    success = parse_catch_result(message)
+                    fielder = pending["catcher_id"]
+                    self.dev_pending_catches[message.channel.id] = None
+                    
+                    from bot.utils.events import is_janmashtami
+                    pts = 20 if is_janmashtami() else 10
+                    
+                    if success:
+                        await message.reply(
+                            f"🔧 **[CATCH TEST] Result detected: TOOK THE CATCH**\n"
+                            f"Fielder: <@{fielder}>\n"
+                            f"Would award: +{pts} during Janmashtami"
+                        )
+                    else:
+                        await message.reply(
+                            f"🔧 **[CATCH TEST] Result detected: BOZO DROPPED THE CATCH**\n"
+                            f"Fielder: <@{fielder}>\n"
+                            f"Would award: -10"
+                        )
+                return
+        # ---------------------------------------------------------
+            
+        # Check ORIGINAL_HC_BOT_ID
+        from bot.config import ORIGINAL_HC_BOT_ID
+        is_og_bot = (ORIGINAL_HC_BOT_ID and message.author.id == ORIGINAL_HC_BOT_ID)
+            
+        # Only listen to OG HC Bot, OR if it's a user pasting stats/uploading images
+        if not is_og_bot and not message.author.bot:
             is_stats = is_raw_statistics(message)
             has_attachment = len(message.attachments) > 0
             if not is_stats and not has_attachment:
                 return
+        elif message.author.bot and not is_og_bot:
+            # Ignore all other bots
+            return
             
         # Optional: Only listen in specific channels
         if CAREER_CHANNEL_IDS and message.channel.id not in CAREER_CHANNEL_IDS:
@@ -175,31 +267,95 @@ class Matches(commands.Cog):
 
         # Check for catch opportunities
         if match_type != "ELITE_NO_CATCHES":
-            if is_catch_event(message):
-                catch_data = parse_catch(message)
-                if catch_data:
-                    await set_pending_catch(match_id, catch_data["catcher_id"], catch_data["batter_id"])
-                    print(f"[CATCH] Pending catch detected for match {match_id}")
-                    await message.reply(f"⏳ **Catch Pending:** Waiting to see if <@{catch_data['catcher_id']}> takes it...")
-                return
-
-            # Check for catch result
-            if is_catch_result(message):
+            # Check if this exact message has already been processed as a completed catch result
+            already_processed = any(c.get("message_id") == message.id for c in active_match.get("catches", []))
+            
+            # 1. Check for catch result FIRST
+            if is_catch_result(message) and not already_processed:
                 success = parse_catch_result(message)
                 result_data = await resolve_pending_catch(match_id, success, message.id)
                 
                 if result_data:
+                    if result_data.get("expired"):
+                        print(f"[CATCH] Match {match_disp} — Pending catch expired. No points awarded.")
+                        return
+
                     chat_cog = self.bot.get_cog("ChatListener")
+                    from bot.database.players import update_player_stats
+                    from bot.utils.events import is_janmashtami
+                    
                     if success:
                         print(f"[CATCH] Match {match_disp} — Player {result_data['catcher_id']} caught {result_data['batter_id']}")
-                        gif_url = chat_cog.get_gif_for_category("catch_taken") if chat_cog else ""
-                        msg = f"🧤 **Catch Taken!** <@{result_data['catcher_id']}> successfully caught <@{result_data['batter_id']}>! (+10 points)\n{gif_url}"
-                        await message.reply(msg.strip())
+                        
+                        catch_pts = 20 if is_janmashtami() else 10
+                        
+                        embed = discord.Embed(
+                            title="🧤 Catch Taken!",
+                            description=f"<@{result_data['catcher_id']}> successfully caught <@{result_data['batter_id']}>!\n\n**Points Update:** `+{catch_pts} Career Points`",
+                            color=discord.Color.green()
+                        )
+                        gif_url = chat_cog.get_gif_for_category("catch_taken") if chat_cog else None
+                        if gif_url:
+                            embed.set_image(url=gif_url)
+                            
+                        await message.reply(embed=embed)
+                        
+                        await update_player_stats(
+                            discord_id=result_data["catcher_id"],
+                            stats_update={
+                                "fielding.catches": 1,
+                                "points": catch_pts
+                            }
+                        )
                     else:
                         print(f"[CATCH] Match {match_disp} — Player {result_data['catcher_id']} dropped catch")
-                        gif_url = chat_cog.get_gif_for_category("catch_dropped") if chat_cog else ""
-                        msg = f"❌ **Catch Dropped.** <@{result_data['catcher_id']}> dropped it. (-10 points)\n{gif_url}"
-                        await message.reply(msg.strip())
+                        
+                        embed = discord.Embed(
+                            title="❌ Catch Dropped!",
+                            description=f"<@{result_data['catcher_id']}> dropped it!\n\n**Points Update:** `-10 Career Points`",
+                            color=discord.Color.red()
+                        )
+                        gif_url = chat_cog.get_gif_for_category("catch_dropped") if chat_cog else None
+                        if gif_url:
+                            embed.set_image(url=gif_url)
+                            
+                        await message.reply(embed=embed)
+                        
+                        await update_player_stats(
+                            discord_id=result_data["catcher_id"],
+                            stats_update={
+                                "fielding.catch_drops": 1,
+                                "points": -10
+                            },
+                            push_updates={
+                                "penalties": {
+                                    "amount": 10,
+                                    "reason": f"Dropped Catch in Match {match_disp}",
+                                    "date": datetime.now(timezone.utc).isoformat(),
+                                    "given_by": "SYSTEM"
+                                }
+                            }
+                        )
+                return
+
+            # 2. THEN check for new catch opportunities
+            if is_catch_event(message) and not already_processed:
+                pending = active_match.get("pending_catch")
+                # Avoid spamming if this exact message is already the active pending catch
+                if pending and pending.get("message_id") == message.id:
+                    return
+                    
+                catch_data = parse_catch(message)
+                if catch_data:
+                    await set_pending_catch(match_id, catch_data["catcher_id"], catch_data["batter_id"], message.id)
+                    print(f"[CATCH] Pending catch detected for match {match_id}")
+                    
+                    embed = discord.Embed(
+                        title="⏳ Catch Opportunity!",
+                        description=f"Waiting to see if <@{catch_data['catcher_id']}> takes the catch...",
+                        color=discord.Color.gold()
+                    )
+                    await message.reply(embed=embed)
                 return
 
         if is_raw_statistics(message):
@@ -289,26 +445,16 @@ class Matches(commands.Cog):
         
         match_id = match["_id"]
         
-        # Pre-fetch recorded catches and hattricks to attribute them correctly
-        recorded_catches = match.get("catches", [])
-        catcher_counts = {}
-        drop_counts = {}
-        for c in recorded_catches:
-            c_id = c["catcher"]
-            if c.get("dropped"):
-                drop_counts[c_id] = drop_counts.get(c_id, 0) + 1
-            else:
-                catcher_counts[c_id] = catcher_counts.get(c_id, 0) + 1
-                
+        # Pre-fetch recorded hattricks to attribute them correctly
         recorded_hattricks = match.get("hattricks", [])
         hattrick_counts = {}
         for h in recorded_hattricks:
             h_id = h["player_id"]
             hattrick_counts[h_id] = hattrick_counts.get(h_id, 0) + 1
 
-        # Ensure all fielders/bowlers with events are in players_data
+        # Ensure all bowlers with hattricks are in players_data
         existing_player_ids = {str(p["discord_id"]) for p in players_data}
-        for cid in list(catcher_counts.keys()) + list(drop_counts.keys()) + list(hattrick_counts.keys()):
+        for cid in list(hattrick_counts.keys()):
             if cid not in existing_player_ids:
                 players_data.append({
                     "discord_id": cid,
@@ -336,9 +482,7 @@ class Matches(commands.Cog):
             # Store their old career level
             old_career_levels[discord_id] = get_career_level(existing_player.get("points", 0))
 
-            # Add catches, drops, and hattricks
-            p_stat["catches"] = catcher_counts.get(discord_id, 0)
-            p_stat["catch_drops"] = drop_counts.get(discord_id, 0)
+            # Add hattricks (Catches/Drops are now handled LIVE)
             p_stat["hattricks"] = hattrick_counts.get(discord_id, 0)
 
             points = calculate_player_points(p_stat)
@@ -814,6 +958,63 @@ class Matches(commands.Cog):
         await matches_col.delete_many({"_id": "HIST-25"})
         
         await ctx.send("✅ Schedule dynamically renamed! Matches are now 43, 44, and the Catches Game is 45.\nAlso deleted the conflicting Match 25 so it won't block you anymore.")
+
+
+    @commands.command(name="backfillcatches", help="Recover missed catch stats from channel history")
+    @is_staff_ctx()
+    async def backfillcatches(self, ctx: commands.Context, limit: int = 200):
+        await ctx.send(f"⏳ Scanning the last {limit} messages in this channel for missed catches...")
+        from bot.config import ORIGINAL_HC_BOT_ID
+        from bot.database.db import db
+        processed_col = db["processed_catches"]
+        
+        history = [msg async for msg in ctx.channel.history(limit=limit, oldest_first=True)]
+        
+        pending_opportunity = None
+        updates = []
+        preview_desc = ""
+        
+        from bot.services.match_detector import is_catch_event, parse_catch, is_catch_result, parse_catch_result
+        from bot.utils.events import is_janmashtami
+        
+        catch_pts = 20 if is_janmashtami() else 10
+        drop_pts = -10
+        
+        for msg in history:
+            if ORIGINAL_HC_BOT_ID and msg.author.id != ORIGINAL_HC_BOT_ID:
+                continue
+                
+            doc = await processed_col.find_one({"_id": msg.id})
+            if doc:
+                continue
+                
+            if is_catch_event(msg):
+                data = parse_catch(msg)
+                if data:
+                    pending_opportunity = data
+            elif pending_opportunity and is_catch_result(msg):
+                success = parse_catch_result(msg)
+                
+                up = {
+                    "msg_id": msg.id,
+                    "catcher_id": pending_opportunity["catcher_id"],
+                    "batter_id": pending_opportunity["batter_id"],
+                    "type": "catch" if success else "drop",
+                    "pts": catch_pts if success else drop_pts
+                }
+                updates.append(up)
+                pending_opportunity = None
+                
+                action = "Caught" if success else "Dropped"
+                preview_desc += f"- **{action}** by <@{up['catcher_id']}> ({up['pts']:+d} pts) [Msg: {msg.id}]\n"
+                
+        if not updates:
+            await ctx.send("✅ No new missed catches found in the scanned history.")
+            return
+            
+        embed = discord.Embed(title="Historical Catches Preview", description=preview_desc[:4000], color=discord.Color.gold())
+        view = BackfillConfirmView(self, ctx, updates, processed_col)
+        await ctx.send(content="⚠️ Review the pending catch recoveries below:", embed=embed, view=view)
 
 async def setup(bot):
     await bot.add_cog(Matches(bot))
