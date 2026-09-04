@@ -316,9 +316,11 @@ class Matches(commands.Cog):
                     else:
                         print(f"[CATCH] Match {match_disp} — Player {result_data['catcher_id']} dropped catch")
                         
+                        drop_pts = -20 if is_janmashtami() else -10
+                        
                         embed = discord.Embed(
                             title="❌ Catch Dropped!",
-                            description=f"<@{result_data['catcher_id']}> dropped it!\n\n**Points Update:** `-10 Career Points`",
+                            description=f"<@{result_data['catcher_id']}> dropped it!\n\n**Points Update:** `{drop_pts} Career Points`",
                             color=discord.Color.red()
                         )
                         gif_url = chat_cog.get_gif_for_category("catch_dropped") if chat_cog else None
@@ -331,11 +333,11 @@ class Matches(commands.Cog):
                             discord_id=result_data["catcher_id"],
                             stats_update={
                                 "fielding.catch_drops": 1,
-                                "points": -10
+                                "points": drop_pts
                             },
                             push_updates={
                                 "penalties": {
-                                    "amount": 10,
+                                    "amount": abs(drop_pts),
                                     "reason": f"Dropped Catch",
                                     "date": datetime.now(timezone.utc).isoformat(),
                                     "given_by": "SYSTEM"
@@ -1002,7 +1004,7 @@ class Matches(commands.Cog):
         from bot.utils.events import is_janmashtami
         
         catch_pts = 20 if is_janmashtami() else 10
-        drop_pts = -10
+        drop_pts = -20 if is_janmashtami() else -10
         
         for msg in history:
             if ORIGINAL_HC_BOT_ID and msg.author.id != ORIGINAL_HC_BOT_ID:

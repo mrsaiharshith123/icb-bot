@@ -105,7 +105,7 @@ def test_janmashtami_double_points(monkeypatch):
     pts = calculate_player_points(stats)
     assert pts == 22
 
-def test_janmashtami_drop_remains_minus_10(monkeypatch):
+def test_janmashtami_double_deductions(monkeypatch):
     monkeypatch.setattr("bot.utils.events.is_janmashtami", lambda: True)
     stats = {
         "runs": 0,
@@ -117,9 +117,9 @@ def test_janmashtami_drop_remains_minus_10(monkeypatch):
         "catch_drops": 0,
         "out": True
     }
-    # Duck = -20. Should remain -20.
+    # Duck = -20. Should double to -40.
     pts = calculate_player_points(stats)
-    assert pts == -20
+    assert pts == -40
 
 def test_historical_non_event_points(monkeypatch):
     monkeypatch.setattr("bot.utils.events.is_janmashtami", lambda: False)

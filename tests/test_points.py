@@ -1,4 +1,9 @@
+import pytest
 from bot.services.points_calculator import calculate_player_points
+
+@pytest.fixture(autouse=True)
+def mock_janmashtami(monkeypatch):
+    monkeypatch.setattr("bot.utils.events.is_janmashtami", lambda: False)
 
 def test_basic_points():
     stats = {

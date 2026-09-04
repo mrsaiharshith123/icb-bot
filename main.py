@@ -50,6 +50,11 @@ class HCCareerBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print("HC Career Mode Support Bot is ready!")
 
+    async def on_message(self, message: discord.Message):
+        if "profile" in message.content.lower():
+            print(f"[DEBUG-ON-MESSAGE] Received from {message.author.name}: {message.content!r}")
+        await super().on_message(message)
+
     async def on_command_error(self, ctx, error):
         if isinstance(error, commands.CheckFailure):
             await ctx.send("❌ You don't have enough permissions to use this command.")

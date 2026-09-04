@@ -122,10 +122,15 @@ class Profile(commands.Cog):
     @commands.is_owner()
     async def deduct(self, ctx: commands.Context, user: discord.User, amount: int, *, reason: str):
         from datetime import datetime, timezone
+        from bot.utils.events import is_janmashtami
 
         if amount <= 0:
             await ctx.send("❌ Amount must be a positive number to deduct.")
             return
+            
+        if is_janmashtami():
+            amount *= 2
+            reason += " (Janmashtami 2x Penalty)"
             
         discord_id = str(user.id)
         player = await get_player(discord_id)

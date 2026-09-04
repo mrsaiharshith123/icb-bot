@@ -36,6 +36,7 @@ def calculate_player_points(stats: dict) -> int:
         
     # NEGATIVE POINTS
     negative_points = 0
+    negative_points -= catch_drops * 10
     
     # AFK, Leave, and Catch Drops are handled manually by admins (except drops are handled LIVE and passed via stats)
     # Duck (0 runs and Out)
@@ -53,5 +54,6 @@ def calculate_player_points(stats: dict) -> int:
     from bot.utils.events import is_janmashtami
     if is_janmashtami():
         positive_points *= 2
+        negative_points *= 2
             
     return positive_points + negative_points
