@@ -21,7 +21,14 @@ class AddStatsConfirmView(discord.ui.View):
         
     @discord.ui.button(label="Confirm & Finalize Match", style=discord.ButtonStyle.success)
     async def confirm_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        from bot.utils.permissions import check_is_staff
+        if not await check_is_staff(interaction):
+            await interaction.response.send_message("❌ Only staff can finalize stats.", ephemeral=True)
+            return
+
         await interaction.response.defer()
+        self.ctx.author = interaction.user
+
         
         from bot.database.db import upcoming_matches_col
         latest_upcoming = await upcoming_matches_col.find_one({"_id": self.upcoming["_id"]}) if self.upcoming else None
@@ -199,10 +206,9 @@ class Matches(commands.Cog):
                 match_type = "CLASSIC"
                 
             new_match = await create_match(channel_id, message.id, match_number, match_type, str(ORIGINAL_HC_BOT_ID))
-            match_disp = f"#{match_number}" if match_number > 0 else f"S3-{message.id}"
             
-            print(f"[MATCH] Detected Match Start {match_disp}")
-            await message.reply(f"🏏 **CAREER MODE MATCH DETECTED**\nMatch {match_disp} is now LIVE. Monitoring events and stats.")
+            print(f"[MATCH] Detected Match Start {new_match['_id']}")
+            await message.reply(f"🏏 **CAREER MODE MATCH DETECTED**\nThis match is now LIVE. Monitoring events and stats.")
             return
 
         if not active_match:
@@ -330,7 +336,7 @@ class Matches(commands.Cog):
                             push_updates={
                                 "penalties": {
                                     "amount": 10,
-                                    "reason": f"Dropped Catch in Match {match_disp}",
+                                    "reason": f"Dropped Catch",
                                     "date": datetime.now(timezone.utc).isoformat(),
                                     "given_by": "SYSTEM"
                                 }
@@ -366,11 +372,29 @@ class Matches(commands.Cog):
                 # Set match to pending approval
                 success = await set_match_pending(match_id, message.id, message.content)
                 if success:
-                    await message.channel.send(f"⚠️ **Pending Stats Detected!**\nStaff, please use `!addstats` to approve and update player profiles for Match #{match_id}.")
+                    upcoming = await upcoming_matches_col.find_one({
+                        "channel_id": channel_id,
+                        "status": {"$in": ["LIVE", "PENDING_APPROVAL"]}
+                    })
+                    match_for_ui = await get_pending_match(channel_id)
+                    
+                    ctx = await self.bot.get_context(message)
+                    
+                    embed = discord.Embed(
+                        title="🏏 Raw match results detected. Add stats?",
+                        description="Stats parsed successfully!\n\nOnce you confirm, career points will be updated.",
+                        color=discord.Color.blue()
+                    )
+                    if upcoming and upcoming.get("temp_latest_image_url"):
+                        embed.set_thumbnail(url=upcoming["temp_latest_image_url"])
+                        embed.add_field(name="Status", value="✅ Result image detected!")
+                    else:
+                        embed.add_field(name="Status", value="⚠️ Waiting for result image upload...")
+                        
+                    view = AddStatsConfirmView(self, ctx, match_for_ui, players_data, upcoming)
+                    await message.reply(embed=embed, view=view)
                 else:
                     print(f"[DB] Ignoring duplicate stats for match {match_id}")
-            else:
-                await message.channel.send(f"⚠️ **CAREER MODE**\nDetected final stats but could not safely parse them for Match #{match_id}.")
 
     @commands.command(name="addstats", help="Approve pending stats for the current channel's match")
     @is_staff_ctx()
