@@ -8,6 +8,17 @@ class Teams(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def cog_command_error(self, ctx: commands.Context, error: Exception):
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send(f"❌ Missing required argument: `{error.param.name}`. Please check the command syntax.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send(f"❌ Invalid argument provided: {str(error)}")
+        elif isinstance(error, commands.CheckFailure):
+            # Let the permission decorator handle it if it has its own, otherwise ignore or send generic
+            pass
+        else:
+            print(f"Error in {ctx.command}: {error}")
+
     async def get_team_roles(self, guild_id: str):
         config = await config_col.find_one({"guild_id": guild_id})
         if config and "team_roles" in config:
