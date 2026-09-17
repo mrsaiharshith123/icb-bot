@@ -66,57 +66,67 @@ class Profile(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="profile", aliases=["me"], description="View your dynamic Career Mode profile card")
+    @commands.command(name="profile", aliases=["me"], help="View your dynamic Career Mode profile card")
     async def profile(self, ctx: commands.Context, user: discord.User = None):
-        await ctx.defer()
-        target = user or ctx.author
-        discord_id = str(target.id)
-        
-        player_data = await get_player(discord_id)
-        player_data["name"] = target.display_name
-        
-        # 1. Fetch avatar bytes
-        avatar_bytes = b""
-        avatar_asset = target.display_avatar or target.default_avatar
-        if avatar_asset:
-            try:
-                avatar_bytes = await avatar_asset.read()
-            except Exception as e:
-                print(f"Failed to fetch display avatar, falling back to default: {e}")
-                try:
-                    avatar_bytes = await target.default_avatar.read()
-                except Exception as ex:
-                    print(f"Failed to fetch default avatar as well: {ex}")
-
-        # 2. Get career level
-        xp = player_data.get("points", 0)
-        player_data["career"] = get_career_level(xp)
-        
-        # 3. Calculate Season Rank
-        cursor = players_col.find({"points": {"$gt": xp}})
-        higher_players = await cursor.to_list(length=None)
-        season_rank = len(higher_players) + 1
-        rank_data = {"season_rank": season_rank}
-        
-        # 4. Fetch last 5 finalized matches for form
-        cursor = matches_col.find(
-            {"status": "FINALIZED", "players.discord_id": discord_id}
-        ).sort("started_at", -1).limit(5)
-        matches_list = await cursor.to_list(length=5)
-        
-        form_matches = []
-        for m in matches_list:
-            p_stats = next((p for p in m["players"] if p["discord_id"] == discord_id), None)
-            if p_stats:
-                form_matches.append(p_stats)
+        try:
+            async with ctx.typing():
+                target = user or ctx.author
+                discord_id = str(target.id)
                 
-        # Generate Pillow card
-        card_io = generate_profile_card(player_data, rank_data, form_matches, avatar_bytes)
-        
-        # Send
-        file = discord.File(card_io, filename="profile.png")
-        view = ProfileView(target)
-        await ctx.send(file=file, view=view)
+                print(f"[DEBUG-PROFILE] Executing profile for {target.display_name} (ID: {discord_id})")
+                
+                player_data = await get_player(discord_id)
+                player_data["name"] = target.display_name
+                
+                # 1. Fetch avatar bytes
+                avatar_bytes = b""
+                avatar_asset = target.display_avatar or target.default_avatar
+                if avatar_asset:
+                    try:
+                        avatar_bytes = await avatar_asset.read()
+                    except Exception as e:
+                        print(f"Failed to fetch display avatar, falling back to default: {e}")
+                        try:
+                            avatar_bytes = await target.default_avatar.read()
+                        except Exception as ex:
+                            print(f"Failed to fetch default avatar as well: {ex}")
+
+                # 2. Get career level
+                xp = player_data.get("points", 0)
+                player_data["career"] = get_career_level(xp)
+                
+                # 3. Calculate Season Rank
+                cursor = players_col.find({"points": {"$gt": xp}})
+                higher_players = await cursor.to_list(length=None)
+                season_rank = len(higher_players) + 1
+                rank_data = {"season_rank": season_rank}
+                
+                # 4. Fetch last 5 finalized matches for form
+                cursor = matches_col.find(
+                    {"status": "FINALIZED", "players.discord_id": discord_id}
+                ).sort("started_at", -1).limit(5)
+                matches_list = await cursor.to_list(length=5)
+                
+                form_matches = []
+                for m in matches_list:
+                    p_stats = next((p for p in m["players"] if p["discord_id"] == discord_id), None)
+                    if p_stats:
+                        form_matches.append(p_stats)
+                        
+                print("[DEBUG-PROFILE] Generating Pillow card...")
+                # Generate Pillow card
+                card_io = generate_profile_card(player_data, rank_data, form_matches, avatar_bytes)
+                
+                print("[DEBUG-PROFILE] Sending image...")
+                # Send
+                file = discord.File(card_io, filename="profile.png")
+                view = ProfileView(target)
+                await ctx.send(file=file, view=view)
+                print("[DEBUG-PROFILE] Successfully sent profile card.")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            await ctx.send(f"❌ An error occurred while generating the profile card: `{e}`")
 
     @commands.command(name="deduct", help="Manually deduct points from a player (Bot Dev only)")
     @commands.is_owner()
