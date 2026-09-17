@@ -127,11 +127,21 @@ class Teams(commands.Cog):
     @commands.command(name="team", aliases=["myteam", "squad"], help="Display a team, or assign a player to a team (Staff only)")
     async def team(self, ctx: commands.Context, user: discord.Member = None, *, team_name: str = None):
         from bot.database.teams import get_user_team
-        from bot.utils.permissions import check_is_staff
         
         # ASSIGNMENT MODE
         if user and team_name:
-            if not await check_is_staff(ctx):
+            # Check permissions manually since check_is_staff expects an Interaction
+            is_staff = False
+            if await ctx.bot.is_owner(ctx.author) or ctx.author.guild_permissions.administrator or ctx.author.guild_permissions.manage_guild:
+                is_staff = True
+            else:
+                config = await config_col.find_one({"guild_id": str(ctx.guild.id)})
+                if config and "staff_role_id" in config:
+                    staff_role_id = config["staff_role_id"]
+                    if any(role.id == staff_role_id for role in ctx.author.roles):
+                        is_staff = True
+                        
+            if not is_staff:
                 await ctx.send("❌ Only staff can assign players to a team.")
                 return
                 
