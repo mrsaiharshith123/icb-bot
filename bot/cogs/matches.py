@@ -612,6 +612,51 @@ class Matches(commands.Cog):
             
             print(f"[POINTS] Updated player {discord_id}")
 
+        # --- Team Stats Aggregation ---
+        from bot.database.teams import get_user_team, update_team_stats
+        
+        team_stats = {}
+        for p_stat in players_data:
+            discord_id = p_stat["discord_id"]
+            member = ctx.guild.get_member(int(discord_id))
+            if not member:
+                continue
+                
+            # Find which team the member belongs to (works for both manual and role-based teams)
+            team_role_id = await get_user_team(str(discord_id))
+            if not team_role_id:
+                continue
+                
+            if team_role_id not in team_stats:
+                team_stats[team_role_id] = {
+                    "runs_scored": 0,
+                    "balls_faced": 0,
+                    "runs_conceded": 0,
+                    "balls_bowled": 0
+                }
+                
+            team_stats[team_role_id]["runs_scored"] += p_stat.get("runs", 0)
+            team_stats[team_role_id]["balls_faced"] += p_stat.get("balls_faced", 0)
+            team_stats[team_role_id]["runs_conceded"] += p_stat.get("runs_conceded", 0)
+            team_stats[team_role_id]["balls_bowled"] += p_stat.get("balls_bowled", 0)
+            
+        # Determine Match Result and Update Teams
+        
+        if len(team_stats) == 2:
+            team_a, team_b = list(team_stats.keys())
+            score_a = team_stats[team_a]["runs_scored"]
+            score_b = team_stats[team_b]["runs_scored"]
+            
+            if score_a > score_b:
+                await update_team_stats(team_a, is_win=True, is_loss=False, is_draw=False, runs_for=team_stats[team_a]["runs_scored"], balls_faced=team_stats[team_a]["balls_faced"], runs_against=team_stats[team_a]["runs_conceded"], balls_bowled=team_stats[team_a]["balls_bowled"])
+                await update_team_stats(team_b, is_win=False, is_loss=True, is_draw=False, runs_for=team_stats[team_b]["runs_scored"], balls_faced=team_stats[team_b]["balls_faced"], runs_against=team_stats[team_b]["runs_conceded"], balls_bowled=team_stats[team_b]["balls_bowled"])
+            elif score_b > score_a:
+                await update_team_stats(team_a, is_win=False, is_loss=True, is_draw=False, runs_for=team_stats[team_a]["runs_scored"], balls_faced=team_stats[team_a]["balls_faced"], runs_against=team_stats[team_a]["runs_conceded"], balls_bowled=team_stats[team_a]["balls_bowled"])
+                await update_team_stats(team_b, is_win=True, is_loss=False, is_draw=False, runs_for=team_stats[team_b]["runs_scored"], balls_faced=team_stats[team_b]["balls_faced"], runs_against=team_stats[team_b]["runs_conceded"], balls_bowled=team_stats[team_b]["balls_bowled"])
+            else:
+                await update_team_stats(team_a, is_win=False, is_loss=False, is_draw=True, runs_for=team_stats[team_a]["runs_scored"], balls_faced=team_stats[team_a]["balls_faced"], runs_against=team_stats[team_a]["runs_conceded"], balls_bowled=team_stats[team_a]["balls_bowled"])
+                await update_team_stats(team_b, is_win=False, is_loss=False, is_draw=True, runs_for=team_stats[team_b]["runs_scored"], balls_faced=team_stats[team_b]["balls_faced"], runs_against=team_stats[team_b]["runs_conceded"], balls_bowled=team_stats[team_b]["balls_bowled"])
+
         # Finalize match in DB
         success = await approve_match_stats(match_id, players_data)
         if success:

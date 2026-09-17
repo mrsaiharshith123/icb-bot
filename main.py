@@ -30,7 +30,8 @@ class HCCareerBot(commands.Bot):
             'bot.cogs.help',
             'bot.cogs.fun',
             'bot.cogs.chat_listener',
-            'bot.cogs.fantasy'
+            'bot.cogs.fantasy',
+            'bot.cogs.teams'
         ]
         
         print("--- STARTUP DIAGNOSTICS ---")

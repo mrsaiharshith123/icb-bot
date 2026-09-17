@@ -9,6 +9,7 @@ matches_col = db["matches"]
 config_col = db["server_config"]
 upcoming_matches_col = db["upcoming_matches"]
 daily_announcements_col = db["daily_announcements"]
+teams_col = db["teams"]
 
 async def setup_indexes():
     # Player indexes
@@ -41,3 +42,7 @@ async def setup_indexes():
     # Daily Announcements indexes
     await daily_announcements_col.create_index("scheduled_at")
     await daily_announcements_col.create_index("announcement_sent")
+
+    # Teams indexes
+    await teams_col.create_index("_id") # Discord Role ID
+    await teams_col.create_index([("points", -1)])
