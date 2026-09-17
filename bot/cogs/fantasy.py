@@ -43,23 +43,6 @@ class Fantasy(commands.Cog):
             
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="team", description="View your active Fantasy XI")
-    async def team_cmd(self, ctx):
-        # Placeholder for Fantasy XI team management
-        discord_id = str(ctx.author.id)
-        player = await get_player(discord_id)
-        
-        team = player.get("fantasy", {}).get("fantasy_team", [])
-        
-        embed = discord.Embed(title=f"🏆 {ctx.author.display_name}'s Fantasy XI", color=discord.Color.dark_theme())
-        if not team:
-            embed.description = "Your Fantasy XI is currently empty. Use `-setteam` (Coming soon) to equip your cards!"
-        else:
-            embed.description = "Your active players:\n\n"
-            for p in team:
-                embed.description += f"🏏 <@{p}>\n"
-                
-        await ctx.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(Fantasy(bot))
